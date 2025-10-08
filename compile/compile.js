@@ -1,52 +1,66 @@
+// backend/compile.js
+const { Server } = require("socket.io");
 const { spawn } = require("child_process");
 const fs = require("fs");
-const path = require("path");
 
-async function compile(code, input) {
-  const compileDir = path.join(__dirname, "compile");
-  if (!fs.existsSync(compileDir)) fs.mkdirSync(compileDir);
+function initCompileSocket(httpServer) {
+  const io = new Server(httpServer, {
+    cors: {
+      origin: ["http://localhost:5173", "http://localhost:4173"],
+    },
+  });
 
-  const timestamp = Date.now(); // nom unique
-  const sourceFile = path.join(compileDir, `program_${timestamp}.c`);
-  const outputFile = path.join(compileDir, `program_${timestamp}.exe`);
+  io.on("connection", (socket) => {
+    console.log("🟢 Client connecté au terminal interactif");
 
-  return new Promise((resolve, reject) => {
-    fs.writeFile(sourceFile, code, (err) => {
-      if (err) return reject(err);
+    let childProcess = null;
 
-      let output = "";
-      let error = "";
+    socket.on("run-code", ({ code }) => {
+      try {
+        fs.writeFileSync("program.c", code);
 
-      const gcc = spawn("C:/Users/pc/Downloads/mingw64/bin/gcc.exe", [
-        sourceFile,
-        "-o",
-        outputFile,
-      ]);
+        const compile = spawn("gcc", ["program.c", "-o", "program"]);
 
-      gcc.stderr.on("data", (data) => (error += data.toString()));
+        compile.on("close", (code) => {
+          if (code === 0) {
+            socket.emit("output", "✅ Compilation réussie !\n");
 
-      gcc.on("close", () => {
-        if (error) return reject(error);
+            childProcess = spawn("./program");
 
-        const program = spawn(outputFile, [], { shell: true });
+            childProcess.stdout.on("data", (data) => {
+              socket.emit("output", data.toString());
+            });
 
-        program.stdout.on("data", (data) => (output += data.toString()));
-        program.stderr.on("data", (data) => (error += data.toString()));
+            childProcess.stderr.on("data", (data) => {
+              socket.emit("output", data.toString());
+            });
 
-        program.on("close", () => {
-          if (error) reject(error);
-          else resolve(output);
+            childProcess.on("close", (code) => {
+              socket.emit("output", `\n🚀 Programme terminé (code: ${code})\n`);
+            });
+          } else {
+            socket.emit("output", "❌ Erreur de compilation\n");
+          }
         });
+      } catch (err) {
+        console.error(err);
+        socket.emit("output", "❌ Erreur interne côté serveur\n");
+      }
+    });
 
-        if (input) {
-          input
-            .split(/\r?\n/)
-            .forEach((line) => program.stdin.write(line + "\n"));
-        }
-        program.stdin.end();
-      });
+    socket.on("user-input", (input) => {
+      if (childProcess) {
+        childProcess.stdin.write(input + "\n");
+      }
+    });
+
+    socket.on("disconnect", () => {
+      console.log("🔴 Client déconnecté");
+      if (childProcess) childProcess.kill();
     });
   });
+
+  console.log("⚡ Terminal interactif prêt via Socket.io");
 }
 
-module.exports = { compile };
+module.exports = { initCompileSocket };

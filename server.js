@@ -1,53 +1,44 @@
-const { compile } = require("./compile/compile");
+// backend/server.js
 const express = require("express");
 const cors = require("cors");
+const http = require("http");
+const { initCompileSocket } = require("./compile/compile"); // ✅ nouvelle importation
+
 const app = express();
-const http = require("http").createServer(app);
-const io = require("socket.io")(http, {
+app.use(express.json());
+app.use(cors());
+
+const server = http.createServer(app);
+
+/************** authentication *************/
+const auth = require("./authentication");
+app.use("/Auth", auth);
+
+const files = require("./getInfo/files");
+app.use("/files", files);
+
+const profile = require("./getInfo/user");
+app.use("/profile", profile);
+
+/*************** Partage du code *****************/
+const { Server } = require("socket.io");
+const io = new Server(server, {
   cors: {
     origin: ["http://localhost:5173", "http://localhost:4173"],
   },
 });
 
-app.use(express.json());
-
-app.use(cors());
-
-/************** compilation  **************/
-app.post("/compile", async (req, res) => {
-  try {
-    let r = await compile(req.body.code, req.body.input);
-    res.send(r);
-  } catch (err) {
-    console.log(err);
-    res.send(err);
-  }
-});
-
-/************** authentication *************/
-const auth = require("./authentication");
-app.use("/Auth", auth);
-const files = require("./getInfo/files");
-app.use("/files", files);
-
-const profile = require("./getInfo/user");
 const { generateRandomCode } = require("./utils/CodeGenerator");
-app.use("/profile", profile);
-
-/* Admin */
-const admin = require("./Admin/index");
-app.use("/Admin", admin);
-
-/*************** Partage du code entre les utilisateurs *****************/
 
 io.on("connection", (socket) => {
   let Pgroup, admin;
+  console.log("👤 Client connecté au partage de code");
+
   socket.on("create-group", () => {
     Pgroup = generateRandomCode();
     admin = socket.id;
     socket.join(Pgroup);
     socket.emit("new-group", Pgroup);
-    console.log(socket.adapter.rooms);
   });
 
   socket.on("UpdateCode", (code) => {
@@ -65,8 +56,9 @@ io.on("connection", (socket) => {
       socket.broadcast
         .to(Pgroup)
         .emit("joined", socket.handshake.auth.email, socket.id);
-    } else socket.emit("error", "Group not found");
-    console.log(socket.adapter.rooms);
+    } else {
+      socket.emit("error", "Group not found");
+    }
   });
 
   socket.on("admin-disconnect", () => {
@@ -82,14 +74,20 @@ io.on("connection", (socket) => {
     socket.broadcast.to(id).emit("remove-group");
   });
 
-  socket.on("disconnect", (reason) => {
-    if (socket.id == admin) {
+  socket.on("disconnect", () => {
+    if (socket.id === admin) {
       socket.broadcast.to(Pgroup).emit("remove-group");
-      socket.leave(Pgroup);
     } else {
       socket.broadcast.to(Pgroup).emit("user-disconnect", socket.id);
     }
   });
 });
 
-http.listen(5000);
+/*************** ⚙️ Initialiser le terminal interactif ***************/
+initCompileSocket(server);
+
+/*************** 🚀 Lancer le serveur ***************/
+const PORT = 5000;
+server.listen(PORT, () => {
+  console.log(`✅ Serveur lancé sur le port ${PORT}`);
+});
