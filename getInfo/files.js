@@ -2,12 +2,11 @@ const express = require("express");
 const mysql = require("mysql2/promise");
 const router = express.Router();
 
-// Connexion MySQL
 const pool = mysql.createPool({
   host: "localhost",
-  user: "root", // ⚡ change si besoin
+  user: "root",
   password: "", // ⚡ ton mot de passe
-  database: "IDE", // ⚡ ta base MySQL
+  database: "adaptive_c_learning",
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
@@ -20,7 +19,7 @@ router.post("/", async (req, res) => {
   try {
     const { user } = req.body;
     const [rows] = await pool.query(
-      "SELECT * FROM file NATURAL JOIN users WHERE email = ? ORDER BY file_id",
+      "SELECT * FROM files NATURAL JOIN users WHERE email = ? ORDER BY file_id",
       [user]
     );
     res.json(rows);
@@ -34,7 +33,7 @@ router.post("/", async (req, res) => {
 router.delete("/:fileId", async (req, res) => {
   const fileId = req.params.fileId;
   try {
-    await pool.query("DELETE FROM file WHERE file_id = ?", [fileId]);
+    await pool.query("DELETE FROM files WHERE file_id = ?", [fileId]);
     res.sendStatus(200);
   } catch (error) {
     console.error(error);
@@ -49,12 +48,12 @@ router.put("/:fileId", async (req, res) => {
   try {
     // vérifier si un fichier existe déjà avec ce nom pour cet utilisateur
     const [checkfile] = await pool.query(
-      "SELECT file_id FROM file WHERE filename = ? AND email = ?",
+      "SELECT file_id FROM files WHERE filename = ? AND user_id = ?",
       [fileName, user]
     );
     if (checkfile.length) return res.sendStatus(409);
 
-    await pool.query("UPDATE file SET filename = ? WHERE file_id = ?", [
+    await pool.query("UPDATE files SET filename = ? WHERE file_id = ?", [
       fileName,
       fileId,
     ]);
@@ -71,13 +70,13 @@ router.post("/create", async (req, res) => {
   try {
     // vérifier si un fichier existe déjà avec ce nom pour cet utilisateur
     const [checkfile] = await pool.query(
-      "SELECT file_id FROM file WHERE filename = ? AND email = ?",
+      "SELECT file_id FROM files WHERE filename = ? AND user_id = ?",
       [fileName, user]
     );
     if (checkfile.length) return res.sendStatus(409);
 
     await pool.query(
-      "INSERT INTO file (filename, email, content) VALUES (?, ?, ?)",
+      "INSERT INTO files (filename, email, content) VALUES (?, ?, ?)",
       [fileName, user, content]
     );
     return res.sendStatus(200);
@@ -107,7 +106,7 @@ router.post("/save", async (req, res) => {
   const { fileName, content, user } = req.body;
   try {
     await pool.query(
-      "UPDATE file SET content = ? WHERE filename = ? AND email = ?",
+      "UPDATE files SET content = ? WHERE filename = ? AND user_id = ?",
       [content, fileName, user]
     );
     return res.sendStatus(200);

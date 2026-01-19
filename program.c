@@ -1,6 +1,5 @@
-#include<stdio.h>
+// Modifier avec pointeur
 
-int main(){
-	printf("hello world");
-	return 0;
-}
+/*
+Modifier la valeur d’une variable en utilisant un pointeur.
+*/
